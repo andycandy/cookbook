@@ -23,6 +23,7 @@ This is a collection of fun and helpful examples for the Gemini API.
 | [Gradio and live API](./gradio_audio.py) | Use gradio to deploy your own instance of the Live API | Live API | [Python Code](./gradio_audio.py) |
 | [Apollo 11 - long context example](./Apollo_11.ipynb) | Search a 400 page transcript from Apollo 11. | File API | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/google-gemini/cookbook/blob/main/examples/Apollo_11.ipynb) |
 | [Anomaly Detection](./Anomaly_detection_with_embeddings.ipynb) | Use embeddings to detect anomalies in your datasets | Embeddings | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/google-gemini/cookbook/blob/main/examples/Anomaly_detection_with_embeddings.ipynb) |
+| [Talk to documents](./Talk_to_documents_with_embeddings.ipynb) | Use embeddings to search through a custom database. | Embeddings | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/google-gemini/cookbook/blob/main/examples/Talk_to_documents_with_embeddings.ipynb) |
 | [Invoice and Form Data Extraction](./Pdf_structured_outputs_on_invoices_and_forms.ipynb) | Use the Gemini API to extract information from PDFs | File API, Structured Outputs | [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/google-gemini/cookbook/blob/main/examples/Pdf_structured_outputs_on_invoices_and_forms.ipynb) |
 
 ---
