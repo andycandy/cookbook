@@ -1,97 +1,106 @@
 # Notebook-related checks
-
 name: Notebooks
 
 on:
-  # Relevant PRs
   pull_request:
     paths:
-    - "**.ipynb"
-  # Allow manual runs
+      - "**.ipynb"
   workflow_dispatch:
 
 jobs:
-  # Format all notebooks.
   nbfmt:
-    name: Notebook format
+    name: Notebook format and testing
     runs-on: ubuntu-latest
+    # Only run when the PR originates from the same repo (token can push)
+    if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # Get *full* history
-    - uses: actions/setup-python@v4
-    - name: Install tensorflow-docs
-      run: python3 -m pip install -U git+https://github.com/tensorflow/docs
-    - name: Fetch main branch
-      run: git fetch -u origin main:main
-    - name: Check notebook formatting
-      run: |
-        if [ "${{ github.event_name }}" == "pull_request" ]; then
-          # Only check notebooks modified in this pull request
-          base_commit=$(git merge-base HEAD ${{ github.event.pull_request.base.sha }})
-          readarray -t changed_notebooks < <(git diff --name-only "${base_commit}...HEAD" "*.ipynb")
-        else
-          # Manual run, check everything
-          readarray -t changed_notebooks < <(find -name '*.ipynb')
-        fi
-        if [[ ${#changed_notebooks[@]} == 0 ]]; then
-          echo "No notebooks modified in this pull request."
-          exit 0
-        else
-          echo "Check formatting with nbfmt:"
-          python3 -m tensorflow_docs.tools.nbfmt --test "${changed_notebooks[@]}"
-        fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0            # full history so merge-base works
 
+      - uses: actions/setup-python@v4
+
+      - name: Install tensorflow-docs
+        run: python3 -m pip install -U git+https://github.com/tensorflow/docs
+
+      - name: Configure Git user
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name  "GitHub Action"
+
+      - name: Format changed notebooks
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_commit=$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})
+            readarray -t changed_notebooks < <(git diff --name-only "${base_commit}...HEAD" "*.ipynb")
+          else
+            readarray -t changed_notebooks < <(find . -name '*.ipynb')
+          fi
+
+          if [[ ${#changed_notebooks[@]} -eq 0 ]]; then
+            echo "No notebooks modified."
+            exit 0
+          fi
+
+          echo "Formatting notebooks: ${changed_notebooks[@]}"
+          python3 -m tensorflow_docs.tools.nbfmt "${changed_notebooks[@]}"
+
+      - name: Commit re-formatted notebooks
+        run: |
+          if git diff --quiet; then
+            echo "No formatting changes needed."
+          else
+            echo "Committing formatted notebooks..."
+            git add -A
+            git commit -m "Auto-format notebooks with nbfmt [skip ci]"
+            git push
+          fi
+
+  # ----- LINT NOTEBOOKS -------------------------------------------------------
   nblint:
     name: Notebook lint
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # Get *full* history
-    - uses: actions/setup-python@v4
-    - name: Install tensorflow-docs
-      run: python3 -m pip install -U git+https://github.com/tensorflow/docs
-    - name: Fetch main branch
-      run: git fetch -u origin main:main
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v4
+      - name: Install tensorflow-docs
+        run: python3 -m pip install -U git+https://github.com/tensorflow/docs
+      - name: Fetch main branch
+        run: git fetch -u origin main:main
 
-    # Lint for all notebooks
-    - name: Lint notebooks
-      run: |
-        if [ "${{ github.event_name }}" == "pull_request" ]; then
-          # Only check notebooks modified in this pull request
-          base_commit=$(git merge-base HEAD ${{ github.event.pull_request.base.sha }})
-          readarray -t changed_notebooks < <(git diff --name-only "${base_commit}...HEAD" "*.ipynb" | grep -v 'gemini-2/' || true)
-        else
-          # Manual run, check everything
-          readarray -t changed_notebooks < <(find . -name '*.ipynb' | grep -v 'gemini-2/')
-        fi
-
-        # Define files to exclude from linting
-        excluded_files=(
-          "examples/Object_detection.ipynb",
-          "quickstarts/Template.ipynb",
-        )
-
-        # Filter out excluded files from the changed_notebooks array
-        filtered_notebooks=()
-        for notebook in "${changed_notebooks[@]}"; do
-          exclude=false
-          for excluded_file in "${excluded_files[@]}"; do
-            if [[ "$notebook" == "$excluded_file" ]]; then
-              exclude=true
-              break
-            fi
-          done
-          if [[ "$exclude" == false ]]; then
-            filtered_notebooks+=("$notebook")
+      - name: Lint notebooks
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_commit=$(git merge-base HEAD ${{ github.event.pull_request.base.sha }})
+            readarray -t changed_notebooks < <(git diff --name-only "${base_commit}...HEAD" "*.ipynb" | grep -v 'gemini-2/' || true)
+          else
+            readarray -t changed_notebooks < <(find . -name '*.ipynb' | grep -v 'gemini-2/')
           fi
-        done
 
-        if [[ ${#filtered_notebooks[@]} == 0 ]]; then
-          echo "No website notebooks modified in this pull request."
-          exit 0
-        else
+          # files to exclude from linting
+          excluded_files=(
+            "examples/Object_detection.ipynb"
+            "quickstarts/Template.ipynb"
+          )
+
+          filtered_notebooks=()
+          for nb in "${changed_notebooks[@]}"; do
+            skip=false
+            for ex in "${excluded_files[@]}"; do
+              [[ "$nb" == "$ex" ]] && skip=true && break
+            done
+            $skip || filtered_notebooks+=("$nb")
+          done
+
+          if [[ ${#filtered_notebooks[@]} -eq 0 ]]; then
+            echo "No website notebooks modified in this pull request."
+            exit 0
+          fi
+
           echo "WARNING: If the button_colab check fails for you, make sure you have <table class=\"tfo-notebook-buttons\"...>"
           echo "Lint check with nblint:"
           python3 -m tensorflow_docs.tools.nblint \
@@ -103,4 +112,3 @@ jobs:
             --arg=base_url:https://ai.google.dev/ \
             --exclude_lint=gemini_cookbook::button_github \
             "${filtered_notebooks[@]}"
-        fi
