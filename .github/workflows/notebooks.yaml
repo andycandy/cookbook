@@ -12,35 +12,31 @@ jobs:
     name: Notebook format and testing
     runs-on: ubuntu-latest
 
-    # Only push when the PR branch lives in the same repository
     if: github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
-      # Checkout the PR branch with a PAT so the follow-up commit re-triggers all workflows
       - uses: actions/checkout@v4
         with:
           ref:   ${{ github.event.pull_request.head.ref }}
-          token: ${{ secrets.BOT_PAT }}      # PAT for the bot account
+          token: ${{ secrets.BOT_PAT }}      # PAT for auto-running workflow after formating commit
           fetch-depth: 0                     # merge-base needs full history
 
-      # Python and tooling
       - uses: actions/setup-python@v4
 
-      - name: Install tensorflow-docs (provides nbfmt)
+      - name: Install tensorflow-docs
         run: python -m pip install -qU git+https://github.com/tensorflow/docs
 
-      # Identify as the bot for commits
       - name: Configure Git user
         run: |
-          git config --local user.email "kasyapanand7+1@github.com"
-          git config --local user.name  "andyservice"
+          git config --local user.email "servicebot@github.com"
+          git config --local user.name  "service"
 
       # Main loop: test each notebook, format if needed, single commit at the end
       - name: Check notebooks one-by-one, format if required
         run: |
           set -e
 
-          # 1. Collect notebooks touched in this PR
+          # Collect notebooks touched in this PR
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             base=$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})
             readarray -t notebooks < <(git diff --name-only "${base}...HEAD" "*.ipynb")
@@ -55,7 +51,7 @@ jobs:
 
           echo "Notebook list: ${notebooks[*]}"
 
-          # 2. Loop: run --test, format when necessary
+          # Loop: run --test, format when necessary
           reformatted=false
           for nb in "${notebooks[@]}"; do
             echo "::group::${nb}"
@@ -65,16 +61,16 @@ jobs:
             set -e
 
             if [[ $test_rc -eq 0 ]]; then
-              echo "✔ ${nb} already formatted"
+              echo "${nb} already formatted"
             else
-              echo "✘ ${nb} needs formatting → applying formatter"
+              echo "${nb} needs formatting → applying formatter"
               python -m tensorflow_docs.tools.nbfmt "${nb}"
               reformatted=true
             fi
             echo "::endgroup::"
           done
 
-          # 3. One commit if anything changed
+          # One commit if anything changed
           if [[ "$reformatted" == "true" ]]; then
             git add "${notebooks[@]}"
             git commit -m "style: auto-format notebooks with nbfmt"
