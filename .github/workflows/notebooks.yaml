@@ -11,27 +11,36 @@ jobs:
   nbfmt:
     name: Notebook format and testing
     runs-on: ubuntu-latest
+
+    # Only attempt to push when the PR branch is in the same repository
     if: github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
+      # ----- checkout PR branch ------------------------------------------------
       - uses: actions/checkout@v4
         with:
           ref:   ${{ github.event.pull_request.head.ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
+      # ----- Python + tools ----------------------------------------------------
       - uses: actions/setup-python@v4
 
-      - name: Install tensorflow-docs (nbfmt)
-        run: python -m pip install -U git+https://github.com/tensorflow/docs
+      - name: Install tensorflow-docs  (nbfmt & nblint live here)
+        run: python -m pip install -qU git+https://github.com/tensorflow/docs
 
-      - name: Configure Git user
+      # ----- identify as the bot for commits -----------------------------------
+      - name: Configure git user
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name  "GitHub Action"
 
-      - name: Loop over notebooks → test / format
+      # ----- main loop ---------------------------------------------------------
+      - name: Check notebooks one-by-one, format if needed, single commit
         run: |
+          set -e
+
+          # 1. collect notebooks touched in this PR
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             base=$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})
             readarray -t notebooks < <(git diff --name-only "${base}...HEAD" "*.ipynb")
@@ -40,34 +49,39 @@ jobs:
           fi
 
           if [[ ${#notebooks[@]} -eq 0 ]]; then
-            echo "No notebooks modified."
+            echo "No notebooks modified in this pull request."
             exit 0
           fi
 
           echo "Notebook list: ${notebooks[*]}"
 
-          # ── loop: test each notebook, format if needed ────────────────
+          # 2. loop: test each notebook, format if needed
           reformatted=false
           for nb in "${notebooks[@]}"; do
-            echo "::group::Checking ${nb}"
+            echo "::group::${nb}"
+            # run --test, but don't exit the script on failure
+            set +e
             python -m tensorflow_docs.tools.nbfmt --test "${nb}"
-            if [[ $? -ne 0 ]]; then
-              echo "➜  Formatting ${nb}"
+            test_rc=$?
+            set -e
+
+            if [[ $test_rc -eq 0 ]]; then
+              echo "✔ already formatted"
+            else
+              echo "✘ needs formatting → applying formatter"
               python -m tensorflow_docs.tools.nbfmt "${nb}"
               reformatted=true
-            else
-              echo "✔ ${nb} already formatted"
             fi
             echo "::endgroup::"
           done
 
-          # ── commit if any notebook is changed ───────────────────
+          # 3. commit once if anything changed
           if [[ "$reformatted" = "true" ]]; then
             git add "${notebooks[@]}"
             git commit -m "style: auto-format notebooks with nbfmt"
             git push
           else
-            echo "All notebooks were in canonical format – nothing to commit."
+            echo "All notebooks already in canonical format – nothing to commit."
           fi
 
 
